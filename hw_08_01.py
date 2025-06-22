@@ -2,6 +2,19 @@ from collections import UserDict
 from datetime import datetime, timedelta
 import re
 import pickle
+from typing import Callable
+
+def input_error(func):
+    def inner(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except KeyError:
+            return "No such contact found."
+        except ValueError as e:
+            return str(e)
+        except IndexError:
+            return "Enter the argument for the command."
+    return inner
 
 class Field:
     def __init__(self, value):
@@ -43,12 +56,11 @@ class Record:
             raise ValueError("Phone number not found.")
 
     def edit_phone(self, old_phone_number, new_phone_number):
-        phone_to_edit = self.find_phone(old_phone_number)
-        if phone_to_edit:
-            self.remove_phone(old_phone_number)
-            self.add_phone(new_phone_number)
-        else:
-            raise ValueError("Phone number not found.")
+        for idx, phone in enumerate(self.phones):
+            if phone.value == old_phone_number:
+                self.phones[idx] = Phone(new_phone_number)
+                return
+        raise ValueError("Phone number not found.")
 
     def find_phone(self, phone_number):
         for phone in self.phones:
@@ -83,7 +95,9 @@ class AddressBook(UserDict):
         for record in self.data.values():
             if record.birthday:
                 birthday_this_year = record.birthday.value.replace(year=today.year)
-                days_until_birthday = (birthday_this_year - today).days
+                if birthday_this_year.date() < today.date():
+                    birthday_this_year = birthday_this_year.replace(year=today.year + 1)
+                days_until_birthday = (birthday_this_year.date() - today.date()).days
                 if 0 <= days_until_birthday <= 7:
                     if birthday_this_year.weekday() >= 5:
                         birthday_this_year += timedelta(days=(7 - birthday_this_year.weekday()))
@@ -93,17 +107,16 @@ class AddressBook(UserDict):
     def __str__(self):
         return "\n".join(str(record) for record in self.data.values())
 
-def input_error(func):
-    def inner(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except KeyError:
-            return "No such contact found."
-        except ValueError as e:
-            return str(e)
-        except IndexError:
-            return "Enter the argument for the command."
-    return inner
+def save_data(book, filename="addressbook.pkl"):
+    with open(filename, "wb") as f:
+        pickle.dump(book, f)
+
+def load_data(filename="addressbook.pkl"):
+    try:
+        with open(filename, "rb") as f:
+            return pickle.load(f)
+    except FileNotFoundError:
+        return AddressBook()
 
 def parse_input(user_input):
     parts = user_input.strip().split()
@@ -147,8 +160,6 @@ def show_all(args, book: AddressBook):
 
 @input_error
 def add_birthday(args, book: AddressBook):
-    if len(args) != 2:
-        raise ValueError("Give me name and birthday please.")
     name, birthday = args
     record = book.find(name)
     if record:
@@ -171,24 +182,12 @@ def birthdays(args, book: AddressBook):
         return "\n".join(f"{entry['name']}: {entry['birthday']}" for entry in upcoming_birthdays)
     return "No upcoming birthdays."
 
-def save_data(book, filename="addressbook.pkl"):
-    with open(filename, "wb") as f:
-        pickle.dump(book, f)
-
-def load_data(filename="addressbook.pkl"):
-    try:
-        with open(filename, "rb") as f:
-            return pickle.load(f)
-    except FileNotFoundError:
-        return AddressBook()  
-
 def main():
     book = load_data()
     print("Welcome to the assistant bot!")
     while True:
         user_input = input("Enter a command: ")
         command, args = parse_input(user_input)
-        
 
         if command in ["close", "exit"]:
             save_data(book)
